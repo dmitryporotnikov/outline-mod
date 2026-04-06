@@ -1,0 +1,54 @@
+services:
+  wireguard-proxy:
+    image: ghcr.io/linuxserver/wireguard:latest
+    container_name: wireguard-proxy
+    restart: always
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv6.conf.all.forwarding=1
+      - net.ipv4.conf.all.rp_filter=2
+      - net.ipv4.conf.all.src_valid_mark=1
+    ports:
+      - "${SB_API_PORT:-8090}:8090"
+      - "443:443/tcp"
+      - "443:443/udp"
+    volumes:
+      - ./vpn.conf:/config/wg_confs/wg0.conf
+    networks:
+      - outline-vpn
+    dns:
+      - 8.8.8.8
+      - 8.8.4.4
+    healthcheck:
+      test: ["CMD", "wg", "show"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: local
+
+  shadowbox:
+    image: quay.io/outline/shadowbox:stable
+    container_name: shadowbox
+    restart: always
+    environment:
+      - SB_STATE_DIR=/opt/outline/shadowbox/persisted-state
+      - SB_API_PORT=8090
+      - SB_API_PREFIX=${SECRET_KEY}
+      - SB_CERTIFICATE_FILE=/opt/outline/shadowbox/persisted-state/shadowbox-selfsigned.crt
+      - SB_PRIVATE_KEY_FILE=/opt/outline/shadowbox/persisted-state/shadowbox-selfsigned.key
+    volumes:
+      - ./state:/opt/outline/shadowbox/persisted-state
+    network_mode: service:wireguard-proxy
+    depends_on:
+      wireguard-proxy:
+        condition: service_healthy
+    logging:
+      driver: local
+
+networks:
+  outline-vpn:
+    driver: bridge
